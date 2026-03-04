@@ -1,0 +1,41 @@
+{
+  "indicators": [
+    { "id": "ind_0", "type": "BB", "params": { "period": 14, "std_dev": 2.4 } },
+    { "id": "ind_1", "type": "RSI", "params": { "period": 14 } },
+    { "id": "ind_2", "type": "RSI", "params": { "period": 42 } }
+  ],
+  "entry_rule": {
+    "type": "logical",
+    "operator": "AND",
+    "left": { "type": "condition", "left": "ind_1", "comparator": "<", "right": "open" },
+    "right": { "type": "condition", "left": "high", "comparator": "crosses_above", "right": "open" }
+  },
+  "exit_rule": {
+    "type": "logical",
+    "operator": "AND",
+    "left": {
+      "type": "logical",
+      "operator": "AND",
+      "left": { "type": "condition", "left": "low", "comparator": "==", "right": "close" },
+      "right": { "type": "condition", "left": "open", "comparator": "<", "right": "volume" }
+    },
+    "right": { "type": "condition", "left": "ind_1", "comparator": ">", "right": "open" }
+  },
+  "risk_management": {
+    "stop_loss_pct": 0.0701,
+    "take_profit_pct": 0.197,
+    "max_hold_bars": 5,
+    "max_hold_bars_soft": 3
+  },
+  "position_sizing": {
+    "method": "volatility_adjusted",
+    "target_risk_pct": 0.0274,
+    "atr_multiplier": 1.9833,
+    "max_pct": 0.1723
+  },
+  "archetype": "mean_reversion",
+  "seeding_type": "crossover",
+  "id": "9b8e6de4-78dc-487e-96b9-bcb59d84e931",
+  "generation": 6,
+  "name": "GEN6_9b8e6de4_CLEAN"
+}
