@@ -1,0 +1,1 @@
+{"query":"query traceQuery($id: String!) { trace(where: { id: $id }) { id name input output observations { id name type } } } ","variables":{"id":"4d66d1724c5344a12649973c0ac59d2f"}}

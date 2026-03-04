@@ -1,0 +1,18 @@
+symbol,name,sector
+AAPL,Apple Inc.,Technology
+MSFT,Microsoft Corporation,Technology
+NVDA,NVIDIA Corporation,Technology
+GOOGL,Alphabet Inc. Class A,Technology
+AMZN,Amazon.com Inc.,Consumer Cyclical
+META,Meta Platforms Inc.,Technology
+TSLA,Tesla Inc.,Consumer Cyclical
+JPM,JPMorgan Chase & Co.,Financial
+V,Visa Inc.,Financial
+JNJ,Johnson & Johnson,Healthcare
+WMT,Walmart Inc.,Consumer Defensive
+PG,Procter & Gamble Co.,Consumer Defensive
+MA,Mastercard Inc.,Financial
+UNH,UnitedHealth Group Inc.,Healthcare
+HD,Home Depot Inc.,Consumer Cyclical
+DIS,Walt Disney Co.,Communication
+PYPL,PayPal Holdings Inc.,Financial

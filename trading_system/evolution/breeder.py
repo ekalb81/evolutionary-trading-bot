@@ -201,3 +201,59 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+
+def mutate_execution_target(child):
+    """Mutate execution_target block: switch instrument, adjust delta/dte"""
+    if 'execution_target' not in child:
+        child['execution_target'] = {
+            'instrument': 'equity',
+            'fractional': True,
+            'target_dte': 30,
+            'target_delta': 0.5
+        }
+    
+    et = child['execution_target']
+    mutation_type = random.choice(['instrument', 'delta', 'dte', 'fractional'])
+    
+    if mutation_type == 'instrument':
+        et['instrument'] = random.choice(['equity', 'options'])
+    elif mutation_type == 'delta' and 'target_delta' in et:
+        et['target_delta'] = round(max(0.1, min(0.9, et['target_delta'] + random.uniform(-0.1, 0.1))), 2)
+    elif mutation_type == 'dte' and 'target_dte' in et:
+        et['target_dte'] = max(7, min(90, et['target_dte'] + random.choice([-7, 7, 14, -14])))
+    elif mutation_type == 'fractional':
+        et['fractional'] = not et.get('fractional', True)
+
+# Patch mutate_genome to also mutate execution_target
+old_mutate = """
+    elif choice == 'remove_indicator':
+        inds = child.get('indicators', [])
+        # Only remove if we have more than 2 indicators to avoid breaking minimum requirements
+        if len(inds) > 2:
+            inds.pop()
+            child['indicators'] = inds
+    
+    # Mutate execution target (options/equity/fractional)
+    mutate_execution_target(child)
+
+def main():"""
+
+new_mutate = """
+    elif choice == 'remove_indicator':
+        inds = child.get('indicators', [])
+        # Only remove if we have more than 2 indicators to avoid breaking minimum requirements
+        if len(inds) > 2:
+            inds.pop()
+            child['indicators'] = inds
+    
+    # Mutate execution target (options/equity/fractional)
+    mutate_execution_target(child)
+
+def main():"""
+
+text = open('/data/workspace/trading_system/evolution/breeder.py').read()
+text = text.replace(old_mutate, new_mutate)
+open('/data/workspace/trading_system/evolution/breeder.py', 'w').write(text)
+
+print("Breeder updated with execution_target mutations")

@@ -670,6 +670,15 @@ def generate_initial_population(size: int = POPULATION_SIZE) -> list:
     # Shuffle population to mix types
     random.shuffle(population)
     
+    # Inject execution target block down the unified population
+    for strategy in population:
+        strategy["execution_target"] = {
+            "instrument": random.choices(["equity", "options"], weights=[0.7, 0.3])[0],
+            "fractional": True,
+            "target_dte": random.choice([7, 14, 30, 45, 60]),
+            "target_delta": random.choice([0.3, 0.4, 0.5, 0.6, 0.7])
+        }
+    
     return population
 
 

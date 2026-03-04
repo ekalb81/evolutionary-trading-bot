@@ -133,6 +133,33 @@ def evaluate_entry_rule(row: pd.Series, rule: dict, df: pd.DataFrame) -> bool:
     return False
 
 
+def calculate_pnl_with_instrument(pnl_pct: float, bars_held: int, genome: dict) -> float:
+    """Calculate realistic PnL applying options leverage and decay if applicable."""
+    target = genome.get('execution_target', {})
+    instrument = target.get('instrument', 'equity')
+    
+    if instrument == 'equity':
+        return pnl_pct
+        
+    if instrument == 'options':
+        # Options approximation model
+        # Base leverage multiplier approximation based on Delta
+        delta = target.get('target_delta', 0.5)
+        dte = target.get('target_dte', 30)
+        leverage = (1.0 / max(0.1, delta)) * 2.0  # Rough heuristic: 0.5 delta = 4x leverage
+        leveraged_pnl = pnl_pct * leverage
+        
+        # Theta decay approximation
+        daily_decay_est = 1.0 / (dte * 2) if dte > 0 else 0.1
+        total_decay = daily_decay_est * bars_held
+        
+        final_pnl = leveraged_pnl - total_decay
+        
+        # Options max loss is -100%
+        return max(-1.0, final_pnl)
+        
+    return pnl_pct
+
 def run_backtest(symbol: str, df: pd.DataFrame, genome: dict) -> list[dict]:
     """Run backtest using vectorized rule evaluation."""
     trades = []
@@ -190,22 +217,28 @@ def run_backtest(symbol: str, df: pd.DataFrame, genome: dict) -> list[dict]:
             
             # Check exits in priority order
             if pnl_pct <= -sl_pct:
-                trades.append({'symbol': symbol, 'entry_price': entry_price, 'exit_price': current_price, 'pnl_pct': pnl_pct, 'bars_held': bars_held, 'type': 'stop_loss'})
+                final_pnl = calculate_pnl_with_instrument(pnl_pct, bars_held, genome)
+                trades.append({'symbol': symbol, 'entry_price': entry_price, 'exit_price': current_price, 'pnl_pct': final_pnl, 'bars_held': bars_held, 'type': 'stop_loss'})
                 position = None
             elif pnl_pct >= tp_pct:
-                trades.append({'symbol': symbol, 'entry_price': entry_price, 'exit_price': current_price, 'pnl_pct': pnl_pct, 'bars_held': bars_held, 'type': 'take_profit'})
+                final_pnl = calculate_pnl_with_instrument(pnl_pct, bars_held, genome)
+                trades.append({'symbol': symbol, 'entry_price': entry_price, 'exit_price': current_price, 'pnl_pct': final_pnl, 'bars_held': bars_held, 'type': 'take_profit'})
                 position = None
             elif bars_held >= max_bars:
-                trades.append({'symbol': symbol, 'entry_price': entry_price, 'exit_price': current_price, 'pnl_pct': pnl_pct, 'bars_held': bars_held, 'type': 'time_exit'})
+                final_pnl = calculate_pnl_with_instrument(pnl_pct, bars_held, genome)
+                trades.append({'symbol': symbol, 'entry_price': entry_price, 'exit_price': current_price, 'pnl_pct': final_pnl, 'bars_held': bars_held, 'type': 'time_exit'})
                 position = None
             elif soft_exits[i]:
-                trades.append({'symbol': symbol, 'entry_price': entry_price, 'exit_price': current_price, 'pnl_pct': pnl_pct, 'bars_held': bars_held, 'type': 'soft_exit'})
+                final_pnl = calculate_pnl_with_instrument(pnl_pct, bars_held, genome)
+                trades.append({'symbol': symbol, 'entry_price': entry_price, 'exit_price': current_price, 'pnl_pct': final_pnl, 'bars_held': bars_held, 'type': 'soft_exit'})
                 position = None
                 
     # Close EOD open positions
     if position == 'long':
         pnl_pct = (closes[-1] - entry_price) / entry_price
-        trades.append({'symbol': symbol, 'entry_price': entry_price, 'exit_price': closes[-1], 'pnl_pct': pnl_pct, 'bars_held': len(df) - entry_bar, 'type': 'eod'})
+        bars_held = len(df) - entry_bar
+        final_pnl = calculate_pnl_with_instrument(pnl_pct, bars_held, genome)
+        trades.append({'symbol': symbol, 'entry_price': entry_price, 'exit_price': closes[-1], 'pnl_pct': final_pnl, 'bars_held': bars_held, 'type': 'eod'})
         
     return trades
 

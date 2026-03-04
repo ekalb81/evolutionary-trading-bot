@@ -25,7 +25,11 @@ from typing import Dict, Optional
 # Add trading_system to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from trading_system.executor.alpaca_broker import AlpacaBroker
+# Load environment variables early
+from trading_system.executor.env_loader import load_env, get_alpaca_credentials
+load_env()
+
+from trading_system.executor.alpaca_broker_v3 import AlpacaBrokerV3
 from trading_system.executor.engine import TradingEngine
 from trading_system.ipc.channel import IPCChannel
 
@@ -64,13 +68,12 @@ class TradingDaemon:
         logger.info(f"[Daemon] Loaded strategy: {self.strategy.get('name')}")
         
         # Initialize broker
-        api_key = os.getenv("ALPACA_API_KEY")
-        secret_key = os.getenv("ALPACA_SECRET_KEY")
+        api_key, secret_key = get_alpaca_credentials()
         
         if not api_key or not secret_key:
             raise ValueError("ALPACA_API_KEY and ALPACA_SECRET_KEY must be set")
         
-        self.broker = AlpacaBroker(
+        self.broker = AlpacaBrokerV3(
             api_key=api_key,
             secret_key=secret_key,
             paper=paper,
@@ -95,6 +98,10 @@ class TradingDaemon:
         
     def _get_tradeable_symbols(self) -> list:
         """Get list of symbols to trade from strategy or universe"""
+        import os
+        env_universe = os.getenv("TRADING_UNIVERSE")
+        if env_universe:
+            return [s.strip() for s in env_universe.split(",") if s.strip()]
         # Top 25 most liquid US large-cap equities (staying under Alpaca's ~30 stream limit)
         # Covers tech, finance, healthcare, consumer, energy - diverse enough for the strategy
         return [
@@ -173,9 +180,9 @@ class TradingDaemon:
             
         # Instead of while-loop polling, we hook the streaming API
         try:
-            # `self.broker.stream_bars` runs internally using `conn.run()` blocking the async
-            # So we await it. It will reconnect automatically on drops.
-            await self.broker.stream_bars(self.handle_bar_update, symbols)
+            self.broker.ws_handler = self.handle_bar_update
+            self.broker.ws_symbols = symbols
+            await self.broker.start_websocket()
         except Exception as e:
             logger.error(f"[Daemon] Market data stream crashed: {e}")
             logger.info("[Daemon] Falling back to polling...")
@@ -188,12 +195,20 @@ class TradingDaemon:
                 for symbol in self.engine.config.get("symbols", []):
                     try:
                         quote = self.broker.get_latest_quote(symbol)
+                        if not quote:
+                            continue
+                        
+                        bid = quote.get("bid_price", quote.get("bid", 1.0))
+                        ask = quote.get("ask_price", quote.get("ask", 1.0))
+                        
+                        
+                        # Add reasonable spreads for fallback
                         market_data = {
                             "timestamp": datetime.utcnow().isoformat(),
-                            "open": quote["bid"],  # Simplified
-                            "high": quote["ask"],
-                            "low": quote["bid"],
-                            "close": (quote["bid"] + quote["ask"]) / 2,
+                            "open": bid,
+                            "high": ask,
+                            "low": bid,
+                            "close": (bid + ask) / 2,
                             "volume": 0,
                         }
                         

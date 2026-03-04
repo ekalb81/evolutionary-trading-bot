@@ -1,0 +1,16 @@
+{
+  "locations": [
+    {"city": "Greensboro", "state": "NC", "radius_mi": 30},
+    {"city": "Winston-Salem", "state": "NC", "radius_mi": 30},
+    {"city": "East Bend", "state": "NC", "radius_mi": 30}
+  ],
+  "categories": [
+    {"name": "GPUs", "keywords": ["GPU", "graphics card", "RTX", "RX", "nvidia", "radeon"]},
+    {"name": "Workstation PCs", "keywords": ["workstation", "server", "homelab", "home lab", "desktop PC", "tower", "Dell Precision", "HP Z", "Lenovo ThinkStation"], "notes": "good RAM capacity, decent CPU, cheap alternative to cloud VMs"},
+    {"name": "Ubiquiti networking", "keywords": ["Ubiquiti", "UniFi", "USG", "UDM", "USW", "UAP", "EdgeRouter"]},
+    {"name": "Vintage home audio", "keywords": ["vintage receiver", "vintage amplifier", "vintage speakers", "turntable", "Marantz", "Pioneer", "Sansui", "Technics", "vintage stereo", "vintage hifi"]}
+  ],
+  "sources": ["craigslist", "offerup", "facebook marketplace (public)", "web search"],
+  "alert": "real-time push via Telegram",
+  "created": "2026-03-02"
+}
