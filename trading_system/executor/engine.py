@@ -39,11 +39,14 @@ class EngineState(Enum):
 class ActivePosition:
     """Track an active position managed by the engine"""
     symbol: str
-    qty: int
+    qty: float  # Changed to float for fractional
     entry_price: float
     entry_bar: int
     entry_time: datetime
     entry_signal_strength: float
+    is_fractional: bool = False
+    synthetic_tp_price: Optional[float] = None
+    synthetic_sl_price: Optional[float] = None
     bracket_order_id: Optional[str] = None
     trailing_stop_order_id: Optional[str] = None
     extended_bars: int = 0
@@ -120,17 +123,21 @@ class TradingEngine:
         logger.info(f"[Engine] Initialized with strategy: {strategy_genome.get('name', 'unknown')}")
         logger.info(f"[Engine] Max hold: {self.max_hold_soft} (soft) / {self.max_hold_hard} (hard) bars")
     
-    def calculate_position_size(self, symbol: str, current_price: float) -> int:
-        """Calculate position size based on account equity and risk parameters"""
+    def calculate_position_size(self, symbol: str, current_price: float, use_fractional: bool = True) -> float:
+        """Calculate fractional (or integer) position size based on account equity and risk parameters"""
         account = self.broker.get_account()
         equity = account["equity"]
         
+        # Total equity we want to risk on this one trade
         risk_amount = equity * self.max_position_pct
-        # Position size = risk_amount / (stop_loss_pct * price)
-        qty = int(risk_amount / (self.stop_loss_pct * current_price))
         
-        # Cap at reasonable size
-        return max(1, min(qty, 100))
+        # Qty required to hit the target risk
+        qty = risk_amount / (self.stop_loss_pct * current_price)
+        
+        if not use_fractional:
+            qty = max(1, int(qty))
+            
+        return round(qty, 4)
     
     def evaluate_entry(self, symbol: str, market_data: Dict) -> Optional[Signal]:
         """
@@ -237,53 +244,84 @@ class TradingEngine:
     def open_position(
         self,
         symbol: str,
-        qty: int,
+        qty: float,
         current_price: float,
         side: OrderSide = OrderSide.BUY,
     ) -> bool:
-        """Open a new position with bracket orders (TP + SL)"""
+        """Open a new position. Supports fractional with synthetic brackets, or integers with native brackets."""
         
         # Calculate TP and SL prices
         if side == OrderSide.BUY:
-            tp_price = current_price * (1 + self.take_profit_pct)
-            sl_price = current_price * (1 - self.stop_loss_pct)
+            tp_price = round(current_price * (1 + self.take_profit_pct), 2)
+            sl_price = round(current_price * (1 - self.stop_loss_pct), 2)
         else:
-            tp_price = current_price * (1 - self.take_profit_pct)
-            sl_price = current_price * (1 + self.stop_loss_pct)
-        
-        # Create bracket order request (Alpaca requires prices rounded to 2 decimals usually)
-        tp_price = round(tp_price, 2)
-        sl_price = round(sl_price, 2)
-        
-        bracket_req = BracketOrderRequest(
-            symbol=symbol,
-            side=side,
-            qty=qty,
-            order_type="market",
-            take_profit_limit_price=tp_price,
-            stop_loss_stop_price=sl_price,
-        )
-        
-        try:
-            order = self.broker.submit_bracket_order(bracket_req)
+            tp_price = round(current_price * (1 - self.take_profit_pct), 2)
+            sl_price = round(current_price * (1 + self.stop_loss_pct), 2)
             
-            # Track position
-            self.positions[symbol] = ActivePosition(
+        fractional = isinstance(qty, float) and not qty.is_integer()
+        
+        if fractional:
+            # Alpaca API blocks native brackets on fractional qty.
+            # We submit a plain Market Order, then track synthetic SL/TP internally.
+            from trading_system.executor.interfaces import BracketOrderRequest # Just for typing matching
+            try:
+                # We use the broker's underlying client to send a pure market order
+                logger.debug(f"Submitting fractional order to {symbol} (qty: {qty})")
+                order = self.broker.client.submit_order(
+                    symbol=symbol,
+                    qty=str(round(qty, 4)),
+                    side="buy" if side == OrderSide.BUY else "sell",
+                    type="market",
+                    time_in_force="day"
+                )
+                
+                self.positions[symbol] = ActivePosition(
+                    symbol=symbol,
+                    qty=qty,
+                    entry_price=current_price,
+                    entry_bar=0,
+                    entry_time=datetime.utcnow(),
+                    entry_signal_strength=0.8,
+                    is_fractional=True,
+                    synthetic_tp_price=tp_price,
+                    synthetic_sl_price=sl_price,
+                )
+                logger.info(f"[Engine] Opened FRACTIONAL {symbol} @ {current_price}, qty={qty:.4f}, (Synthetic) TP={tp_price:.2f}, SL={sl_price:.2f}")
+                return True
+            except Exception as e:
+                logger.error(f"[Engine] Failed to open synthetic fractional position for {symbol}: {e}")
+                return False
+        else:
+            # Native Bracket Order Logic
+            bracket_req = BracketOrderRequest(
                 symbol=symbol,
-                qty=qty,
-                entry_price=current_price,
-                entry_bar=0,  # Would use actual bar count
-                entry_time=datetime.utcnow(),
-                entry_signal_strength=0.8,
-                bracket_order_id=order.id,
+                side=side,
+                qty=int(qty),
+                order_type="market",
+                take_profit_limit_price=tp_price,
+                stop_loss_stop_price=sl_price,
             )
             
-            logger.info(f"[Engine] Opened {symbol} @ {current_price}, qty={qty}, TP={tp_price:.2f}, SL={sl_price:.2f}")
-            return True
-            
-        except Exception as e:
-            logger.error(f"[Engine] Failed to open position for {symbol}: {e}")
-            return False
+            try:
+                order = self.broker.submit_bracket_order(bracket_req)
+                
+                # Track position
+                self.positions[symbol] = ActivePosition(
+                    symbol=symbol,
+                    qty=int(qty),
+                    entry_price=current_price,
+                    entry_bar=0,  # Would use actual bar count
+                    entry_time=datetime.utcnow(),
+                    entry_signal_strength=0.8,
+                    bracket_order_id=order.id,
+                )
+                
+                logger.info(f"[Engine] Opened {symbol} @ {current_price}, qty={int(qty)}, TP={tp_price:.2f}, SL={sl_price:.2f}")
+                return True
+                
+            except Exception as e:
+                logger.error(f"[Engine] Failed to open position for {symbol}: {e}")
+                return False
     
     def close_position(self, symbol: str, reason: str = "signal") -> bool:
         """Close an existing position"""
@@ -376,10 +414,24 @@ class TradingEngine:
         
         This is called when new data arrives (via websocket or polling).
         """
-        
+        current_price = market_data.get("close")
+        if not current_price:
+            return
+            
         # Check if we have a position
         if symbol in self.positions:
             position = self.positions[symbol]
+            
+            # Synthetic Bracket Check (Fractional Trading)
+            if position.is_fractional:
+                if position.synthetic_tp_price and current_price >= position.synthetic_tp_price:
+                    logger.info(f"[Engine] SYNTHETIC Take-Profit Triggered! {symbol} @ {current_price}")
+                    self.close_position(symbol, reason="Synthetic Take-Profit")
+                    return
+                elif position.synthetic_sl_price and current_price <= position.synthetic_sl_price:
+                    logger.info(f"[Engine] SYNTHETIC Stop-Loss Triggered! {symbol} @ {current_price}")
+                    self.close_position(symbol, reason="Synthetic Stop-Loss")
+                    return
             
             # Check for exit signal
             exit_signal = self.evaluate_exit(symbol, market_data, position)
