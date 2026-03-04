@@ -31,7 +31,7 @@ ALPACA_API_KEY = os.getenv("ALPACA_API_KEY", "PKW4ZBECKAWJ5PSLKUEYGNR4EM")
 ALPACA_SECRET_KEY = os.getenv("ALPACA_SECRET_KEY")
 ALPACA_BASE_URL = os.getenv("ALPACA_BASE_URL", "https://paper-api.alpaca.markets")
 
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "sk-or-v1-5d6f81c3-4b8d-4cbb-a3b9-3e3c8d4f1a2b")  # Fallback
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")  # Fallback
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
 # =============================================================================
